@@ -61,7 +61,7 @@ DATABASE_URL="postgresql://USER:PASSWORD@localhost:5432/delogs_format_demo"
 
 # JWTの署名キー（変更推奨）
 # openssl rand -base64 32
-AUTH_SECRET="your_secure_secret_key_here"
+JWT_SECRET="your_secure_secret_key_here"
 
 # セッションCookieの名前（任意。省略時は "session"）
 SESSION_COOKIE_NAME=session
