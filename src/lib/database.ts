@@ -11,13 +11,23 @@ const basePrisma = new PrismaClient({
       : ["error"],
 });
 
-export const prisma =
-  globalForPrisma.prisma ||
-  (basePrisma.$extends(
-    readReplicas({
-      url: process.env.DATABASE_URL_REPLICA!,
-    }),
-  ) as unknown as PrismaClient);
+// --- ▼ 修正箇所 ▼ ---
+
+// 1. リードレプリカのURLを変数として取得（'!' を削除）
+const replicaUrl = process.env.DATABASE_URL_REPLICA;
+
+// 2. replicaUrl が存在する場合のみ $extends を呼び出す
+const extendedPrisma = replicaUrl
+  ? (basePrisma.$extends(
+      readReplicas({
+        url: replicaUrl,
+      }),
+    ) as unknown as PrismaClient)
+  : (basePrisma as unknown as PrismaClient); // 存在しない場合は basePrisma をそのまま使用
+
+export const prisma = globalForPrisma.prisma || extendedPrisma;
+
+// --- ▲ 修正箇所 ▲ ---
 
 if (process.env.NODE_ENV !== "production") globalForPrisma.prisma = prisma;
 
