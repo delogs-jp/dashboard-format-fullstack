@@ -14,9 +14,6 @@ import {
   IMAGE_RECOMMENDED_PX,
 } from "@/lib/users/schema";
 
-import type { Role } from "@/lib/roles/schema";
-import { getRoleBadgeProps } from "@/lib/roles/mock";
-
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -40,9 +37,12 @@ import { Badge } from "@/components/ui/badge";
    ========================= */
 export type ProfileInitial = {
   name: string;
-  email: string; // 表示のみ
-  roleCode: Role["code"]; // mock.ts のロールコードに追随
-  currentAvatarUrl?: string; // 既存アバターのURL（public想定）
+  email: string;
+  phone?: string; // 追加
+  //  roleCode: Role["code"]; // 削除
+  currentAvatarUrl?: string;
+  effectiveRoleName: string;
+  effectiveBadgeColor: string | null;
 };
 
 type Props = {
@@ -51,6 +51,7 @@ type Props = {
   onCancel?: () => void;
   onNavigateEmail: () => void;
   onNavigatePassword: () => void;
+  onDelete: () => void; // ← 追加
 };
 
 /* =========================
@@ -62,10 +63,15 @@ export default function ProfileForm({
   onCancel,
   onNavigateEmail,
   onNavigatePassword,
+  onDelete,
 }: Props) {
   const form = useForm<ProfileUpdateValues>({
     resolver: zodResolver(profileUpdateSchema),
-    defaultValues: { name: initial.name, avatarFile: undefined },
+    defaultValues: {
+      name: initial.name,
+      avatarFile: undefined,
+      phone: initial.phone, // 追加
+    },
     mode: "onBlur",
   });
 
@@ -91,38 +97,38 @@ export default function ProfileForm({
 
   const handleSubmit = form.handleSubmit(onSubmit);
 
-  const badge = getRoleBadgeProps(initial.roleCode);
+  //const badge = getRoleBadgeProps(initial.roleCode);
 
   return (
     <Form {...form}>
       <form onSubmit={handleSubmit} data-testid="profile-form">
         <Card className="w-full rounded-md">
           <CardHeader className="-mt-2 -mb-4">
-            {/*
-            <RoleBadgeRow
-              label={rolePreset.label}
-              badgeClass={rolePreset.badgeClass}
-            />
-            */}
-            <RoleBadgeRow label={badge.label} badgeStyle={badge.style} />
+            {/* 初期値を利用してラベル表示 */}
+            <Badge
+              className="ml-auto inline-block w-[85px] px-2 py-1 text-center"
+              style={{
+                backgroundColor: initial.effectiveBadgeColor ?? "#666",
+                color: "#fff",
+                border: "none",
+              }}
+            >
+              {initial.effectiveRoleName}
+            </Badge>
+            {/*  削除 → <RoleBadgeRow label={badge.label} badgeStyle={badge.style} /> */}
           </CardHeader>
 
           <CardContent className="space-y-6 pt-1">
-            {/* アバター（FormMessage をこの中で出す） */}
             <AvatarField
               currentAvatarUrl={initial.currentAvatarUrl}
               previewUrl={previewUrl}
               onPick={async (file) => {
-                // いったんエラーを消す
                 form.clearErrors("avatarFile");
-
                 if (!file) {
                   form.setValue("avatarFile", undefined, { shouldDirty: true });
                   setPreviewUrl(null);
                   return;
                 }
-
-                // ピクセル検証（非同期）
                 const pixelError = await validateImagePixels(file);
                 if (pixelError) {
                   form.setError("avatarFile", {
@@ -133,8 +139,6 @@ export default function ProfileForm({
                   setPreviewUrl(null);
                   return;
                 }
-
-                // OK: 値をセット＋プレビュー
                 form.setValue("avatarFile", file, {
                   shouldDirty: true,
                   shouldValidate: true, // zod の容量/拡張子チェックも走る
@@ -147,10 +151,11 @@ export default function ProfileForm({
                 form.clearErrors("avatarFile");
                 setPreviewUrl(null);
               }}
+              onDelete={onDelete} // ← ここで渡す
               footerMessage={<FormMessage data-testid="avatar-error" />}
             />
-
             <NameField />
+            <PhoneField /> {/* ← 追加 */}
             <EmailRow email={initial.email} onNavigate={onNavigateEmail} />
             <PasswordRow onNavigate={onNavigatePassword} />
           </CardContent>
@@ -188,12 +193,14 @@ function AvatarField({
   previewUrl,
   onPick,
   onClear,
+  onDelete, // ← 追加
   footerMessage,
 }: {
   currentAvatarUrl?: string;
   previewUrl: string | null;
   onPick: (file: File | null) => void;
   onClear: () => void;
+  onDelete: () => void; // ← 追加
   footerMessage?: React.ReactNode;
 }) {
   const fileInputId = React.useId(); // ラベルとInput要素の紐づけのためID取得
@@ -225,6 +232,7 @@ function AvatarField({
                   width={64}
                   height={64}
                   className="h-full w-full object-cover"
+                  unoptimized
                 />
               ) : (
                 <div className="text-muted-foreground flex h-full w-full items-center justify-center text-xs">
@@ -244,25 +252,37 @@ function AvatarField({
                 aria-label="アバター画像を選択"
                 data-testid="avatar-file"
               />
-              <div className="flex gap-2">
+              <div className="flex justify-between">
+                <div className="flex gap-2">
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    className="cursor-pointer"
+                    onClick={handleOpen}
+                  >
+                    画像を選択
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="cursor-pointer"
+                    onClick={onClear}
+                    data-testid="avatar-clear"
+                  >
+                    クリア
+                  </Button>
+                </div>
                 <Button
                   type="button"
-                  variant="secondary"
+                  variant="destructive"
                   size="sm"
                   className="cursor-pointer"
-                  onClick={handleOpen}
+                  onClick={onDelete}
+                  data-testid="avatar-delete"
                 >
-                  画像を選択
-                </Button>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="cursor-pointer"
-                  onClick={onClear}
-                  data-testid="avatar-clear"
-                >
-                  クリア
+                  登録画像を削除
                 </Button>
               </div>
 
@@ -358,6 +378,32 @@ function PasswordRow({ onNavigate }: { onNavigate: () => void }) {
   );
 }
 
+// 電話番号
+function PhoneField() {
+  return (
+    <FormField
+      name="phone"
+      render={({ field }) => (
+        <FormItem>
+          <FormLabel className="font-semibold">電話番号</FormLabel>
+          <FormControl>
+            <Input
+              {...field}
+              value={field.value ?? ""}
+              placeholder="090-xxxx-xxxx"
+              aria-label="電話番号"
+              autoComplete="off"
+              data-testid="phone"
+            />
+          </FormControl>
+          <FormMessage data-testid="phone-error" />
+        </FormItem>
+      )}
+    />
+  );
+}
+
+/*
 // ロール（バッジ表示のみ）
 function RoleBadgeRow({
   label,
@@ -378,3 +424,4 @@ function RoleBadgeRow({
     </div>
   );
 }
+*/

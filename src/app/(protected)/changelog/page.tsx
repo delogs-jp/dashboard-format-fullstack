@@ -1,4 +1,4 @@
-/* src/app/(protected)/changelog/page.tsx */
+// src/app/(protected)/changelog/page.tsx
 import type { Metadata } from "next";
 import Link from "next/link";
 
@@ -11,7 +11,6 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -28,9 +27,12 @@ import {
   History,
 } from "lucide-react";
 
+// ★ 追加：SSRガード
+import { guardHrefOrRedirect } from "@/lib/auth/guard.ssr";
+
 export const metadata: Metadata = {
   title: "更新履歴",
-  description: "UIのみ版デモの更新履歴",
+  description: "DB連携版デモの更新履歴",
 };
 
 type Change = {
@@ -41,16 +43,19 @@ type Change = {
 
 const changes: ReadonlyArray<Change> = [
   {
-    date: "2025-09-04",
+    date: "2025-11-05",
     version: "v0.1.0",
     // ★ 内側の items は as const で読み取り専用化（任意）
     items: [
-      "UIのみ版 初期公開（ログイン、レイアウト、ユーザー管理、プロフィール、ロール、メニュー、404/忘れた導線）",
+      "DB連携版 初期公開（ログイン、レイアウト、ユーザー管理、プロフィール、ロール、メニュー、404/忘れた導線）",
     ] as const,
   },
 ];
 
-export default function Page() {
+export default async function Page() {
+  // ★ ここで表示可否を判定（未ログイン/権限不足/未定義は内部でredirect）
+  await guardHrefOrRedirect("/changelog", "/");
+
   return (
     <>
       <header className="flex h-16 shrink-0 items-center gap-2 transition-[width,height] ease-linear group-has-data-[collapsible=icon]/sidebar-wrapper:h-12">
@@ -73,9 +78,6 @@ export default function Page() {
       <div className="container flex flex-1 flex-col gap-6 p-4 pt-0">
         <div className="flex flex-wrap items-center gap-2">
           <h1 className="text-2xl font-semibold tracking-tight">更新履歴</h1>
-          <Badge variant="outline" className="rounded-full">
-            UI Only
-          </Badge>
         </div>
         <p className="text-muted-foreground">
           リリースノート形式で変更点をまとめています。DB連携版は別途アナウンス予定です。
@@ -132,11 +134,11 @@ export default function Page() {
           <CardContent className="flex flex-wrap items-center gap-3">
             <Button asChild aria-label="GitHubリポジトリを新しいタブで開く">
               <Link
-                href="https://github.com/delogs-jp/dashboard-format-ui"
+                href="https://github.com/delogs-jp/dashboard-format-fullstack"
                 target="_blank"
                 rel="noreferrer"
               >
-                delogs-jp/dashboard-format-ui
+                delogs-jp/dashboard-format-fullstack
                 <ExternalLink className="ml-2 size-4 opacity-80" />
               </Link>
             </Button>

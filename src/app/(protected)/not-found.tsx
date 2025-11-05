@@ -1,4 +1,7 @@
 // src/app/(protected)/not-found.tsx
+import { redirect } from "next/navigation"; // 追加
+import { lookupSessionFromCookie } from "@/lib/auth/session"; // 追加
+
 import type { Metadata } from "next";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import {
@@ -16,7 +19,12 @@ export const metadata: Metadata = {
   title: "ページが見つかりません",
 };
 
-export default function ProtectedNotFound() {
+export default async function ProtectedNotFound() {
+  const session = await lookupSessionFromCookie();
+  if (!session.ok) {
+    redirect("/"); // 未ログインはログインページ（/）へ
+  }
+
   return (
     <>
       <header className="flex h-16 shrink-0 items-center gap-2 transition-[width,height] ease-linear group-has-data-[collapsible=icon]/sidebar-wrapper:h-12">

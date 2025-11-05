@@ -126,7 +126,7 @@ function TopNode({
         </CollapsibleTrigger>
 
         <CollapsibleContent>
-          <SidebarMenuSub>
+          <SidebarMenuSub className="mr-0">
             {node.children?.map((child) => (
               <SubNode
                 key={child.id}
@@ -203,7 +203,7 @@ function SubNode({
         </CollapsibleTrigger>
 
         <CollapsibleContent>
-          <SidebarMenuSub className="ml-2">
+          <SidebarMenuSub className="mr-0 ml-2">
             {node.children?.map((gchild) => (
               <SidebarMenuSubItem key={gchild.id}>
                 <SidebarMenuSubButton

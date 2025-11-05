@@ -1,10 +1,12 @@
-/* ======================================================
-   src/app/(protected)/masters/roles/data-table.tsx
-   ====================================================== */
+// src/app/(protected)/masters/roles/data-table.tsx
 "use client";
 
 import * as React from "react";
-import type { ColumnDef, SortingState } from "@tanstack/react-table";
+import type {
+  ColumnDef,
+  SortingState,
+  VisibilityState,
+} from "@tanstack/react-table";
 import {
   flexRender,
   getCoreRowModel,
@@ -12,120 +14,360 @@ import {
   getSortedRowModel,
   useReactTable,
 } from "@tanstack/react-table";
-import Link from "next/link";
-import { Input } from "@/components/ui/input";
+import { Table } from "@/components/datagrid/table-container";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
-  Table,
   TableBody,
   TableCell,
   TableHead,
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Button } from "@/components/ui/button";
-import type { Role } from "@/lib/roles/schema";
-import type { StatusFilter } from "./columns";
+import type { DateRange } from "react-day-picker";
+import { format } from "date-fns";
+import { ja } from "date-fns/locale";
+import type { DepartmentRoleRow } from "./columns";
 
-type Props<TData> = {
-  columns: ColumnDef<TData, unknown>[];
-  data: TData[];
-  /** 新規作成への遷移先（例：/masters/roles/new） */
-  newPath: string;
+import { useDatagridQueryState } from "@/lib/datagrid/use-datagrid-query-state";
+import { usePersistentDatagridState } from "@/lib/datagrid/use-persistent-datagrid-state";
+import { fromDateRange, toDateRange } from "@/lib/datagrid/date-io";
+import { buildCsv, downloadCsv, fmtDateTime } from "@/lib/datagrid/csv";
+
+import { DatagridToolbar } from "@/components/datagrid/datagrid-toolbar";
+import { DatagridSummary } from "@/components/datagrid/datagrid-summary";
+import { DatagridPagination } from "@/components/datagrid/datagrid-pagination";
+
+type Props = {
+  columns: ColumnDef<DepartmentRoleRow, unknown>[];
+  data: DepartmentRoleRow[];
+  kindOptions: { value: string; label: string }[];
+  canDownloadData?: boolean;
+  canEditData?: boolean;
 };
 
-export default function RolesDataTable<TData extends Role>({
+export default function DataTable({
   columns,
   data,
-  newPath,
-}: Props<TData>) {
-  // 検索/フィルタUIの状態
-  const [q, setQ] = React.useState("");
-  const [status, setStatus] = React.useState<StatusFilter>("ALL");
+  kindOptions,
+  canDownloadData = false,
+  canEditData = false,
+}: Props) {
+  const [mounted, setMounted] = React.useState(false);
+  React.useEffect(() => setMounted(true), []);
+
+  const allColumnIds = React.useMemo(
+    () =>
+      [
+        "displayId",
+        "code",
+        "kind",
+        "nameEffective",
+        "priority",
+        "canEditData",
+        "canDownloadData",
+        "isEnabledInDepartment",
+        "remarks",
+        "createdAt",
+        "updatedAt",
+      ] as const,
+    [],
+  );
+  type ColId = (typeof allColumnIds)[number];
+
+  // URL同期（ロール一覧専用の名前空間）
+  const [queryState, setQueryState] = useDatagridQueryState(
+    "masters-roles",
+    {
+      q: "",
+      kinds: [] as string[], // 空配列＝全種別
+      status: "ALL" as "ALL" | "ACTIVE" | "INACTIVE",
+      createdRange: undefined as { from?: string; to?: string } | undefined,
+      updatedRange: undefined as { from?: string; to?: string } | undefined,
+      cols: Array.from(allColumnIds) as ColId[],
+    },
+    { persistKey: "masters-roles" },
+  );
+
+  const allKinds = React.useMemo(
+    () => kindOptions.map((o) => o.value),
+    [kindOptions],
+  );
+  const kindsForFilter = queryState.kinds.length ? queryState.kinds : allKinds;
+
+  const createdRange = React.useMemo(
+    () => toDateRange(queryState.createdRange),
+    [queryState.createdRange],
+  );
+  const updatedRange = React.useMemo(
+    () => toDateRange(queryState.updatedRange),
+    [queryState.updatedRange],
+  );
+
+  const setQ = (v: string) => setQueryState((s) => ({ ...s, q: v }));
+  const setKinds = (next: string[]) =>
+    setQueryState((s) => ({ ...s, kinds: next }));
+  const setStatus = (next: "ALL" | "ACTIVE" | "INACTIVE") =>
+    setQueryState((s) => ({ ...s, status: next }));
+  const setCreatedRange = (r?: DateRange) =>
+    setQueryState((s) => ({ ...s, createdRange: fromDateRange(r) }));
+  const setUpdatedRange = (r?: DateRange) =>
+    setQueryState((s) => ({ ...s, updatedRange: fromDateRange(r) }));
+  const setVisibleColumnIds = (ids: ColId[]) =>
+    setQueryState((s) => ({ ...s, cols: ids }));
+
+  // ページサイズの永続化
+  const [persisted, setPersisted] = usePersistentDatagridState(
+    "masters-roles",
+    { pageSize: 20 },
+  );
+
   const [sorting, setSorting] = React.useState<SortingState>([
-    { id: "priority", desc: true }, // 優先度の高い順で初期表示
+    { id: "priority", desc: false }, // 既定は優先度の昇順
   ]);
 
-  // 前処理フィルタ（文字列検索・状態）
+  const columnLabels = React.useMemo(
+    () =>
+      ({
+        displayId: "表示ID",
+        code: "コード",
+        kind: "種別",
+        nameEffective: "表示名",
+        priority: "優先度",
+        canEditData: "編集可",
+        canDownloadData: "DL可",
+        isEnabledInDepartment: "状態",
+        remarks: "備考",
+        createdAt: "登録日時",
+        updatedAt: "更新日時",
+      }) as const,
+    [],
+  );
+
+  const effectiveVisibleColumnIds: ColId[] = mounted
+    ? (queryState.cols as ColId[])
+    : (Array.from(allColumnIds) as ColId[]);
+  const columnVisibility = React.useMemo<VisibilityState>(() => {
+    const set = new Set(effectiveVisibleColumnIds);
+    return {
+      actions: true,
+      q: false,
+      displayId: set.has("displayId"),
+      code: set.has("code"),
+      kind: set.has("kind"),
+      nameEffective: set.has("nameEffective"),
+      priority: set.has("priority"),
+      canEditData: set.has("canEditData"),
+      canDownloadData: set.has("canDownloadData"),
+      isEnabledInDepartment: set.has("isEnabledInDepartment"),
+      remarks: set.has("remarks"),
+      createdAt: set.has("createdAt"),
+      updatedAt: set.has("updatedAt"),
+    };
+  }, [effectiveVisibleColumnIds]);
+
+  // フィルタ
   const filteredData = React.useMemo(() => {
-    const needle = q.trim().toLowerCase();
-    return (data as Role[]).filter((r) => {
+    const needle = queryState.q.trim().toLowerCase();
+    const kindSet = new Set(kindsForFilter);
+    const inRange = (d: Date, r?: DateRange) => {
+      if (!r?.from && !r?.to) return true;
+      const ts = d.getTime();
+      if (r?.from && ts < new Date(r.from).setHours(0, 0, 0, 0)) return false;
+      if (r?.to && ts > new Date(r.to).setHours(23, 59, 59, 999)) return false;
+      return true;
+    };
+
+    return data.filter((r) => {
       const passQ =
         !needle ||
-        `${r.displayId} ${r.code} ${r.displayName}`
+        `${r.displayId} ${r.code} ${r.nameEffective} ${r.remarks ?? ""}`
           .toLowerCase()
           .includes(needle);
+      const passKind = kindSet.has(r.kind);
       const passStatus =
-        status === "ALL" ||
-        (status === "ACTIVE" ? r.isActive === true : r.isActive === false);
-      return passQ && passStatus;
-    }) as unknown as TData[];
-  }, [data, q, status]);
+        queryState.status === "ALL" ||
+        (queryState.status === "ACTIVE"
+          ? r.isEnabledInDepartment
+          : !r.isEnabledInDepartment);
+      const passCreated = inRange(r.createdAt, createdRange);
+      const passUpdated = inRange(r.updatedAt, updatedRange);
+      return passQ && passKind && passStatus && passCreated && passUpdated;
+    });
+  }, [
+    data,
+    queryState.q,
+    queryState.status,
+    kindsForFilter,
+    createdRange,
+    updatedRange,
+  ]);
 
   const table = useReactTable({
     data: filteredData,
     columns,
-    state: { sorting },
+    state: { sorting, columnVisibility },
     onSortingChange: setSorting,
     getCoreRowModel: getCoreRowModel(),
     getSortedRowModel: getSortedRowModel(),
     getPaginationRowModel: getPaginationRowModel(),
-    initialState: { pagination: { pageIndex: 0, pageSize: 10 } },
+    initialState: { pagination: { pageIndex: 0, pageSize: 20 } },
+    meta: {
+      kindOptions,
+      kinds: kindsForFilter,
+      setKinds,
+      status: queryState.status,
+      setStatus,
+      createdRange,
+      setCreatedRange,
+      updatedRange,
+      setUpdatedRange,
+    },
   });
+
+  React.useEffect(() => {
+    if (mounted) table.setPageSize(persisted.pageSize);
+  }, [mounted, persisted.pageSize, table]);
+
+  // CSV（可視列のみ）
+  const onDownloadCsv = React.useCallback(() => {
+    const visibleLeaf = table
+      .getVisibleLeafColumns()
+      .map((c) => c.id)
+      .filter((id) => id !== "actions" && id !== "q") as ColId[];
+
+    const headers = visibleLeaf.map((id) => columnLabels[id]);
+
+    const rows = filteredData.map((r) =>
+      visibleLeaf.map((id) => {
+        switch (id) {
+          case "displayId":
+            return r.displayId;
+          case "code":
+            return r.code;
+          case "kind":
+            return r.kind === "role"
+              ? "ベース"
+              : r.kind === "override"
+                ? "上書き"
+                : "部署ローカル";
+          case "nameEffective":
+            return r.nameEffective;
+          case "priority":
+            return r.priority;
+          case "canEditData":
+            return r.canEditData ? "可" : "不可";
+          case "canDownloadData":
+            return r.canDownloadData ? "可" : "不可";
+          case "isEnabledInDepartment":
+            return r.isEnabledInDepartment ? "有効" : "無効";
+          case "remarks":
+            return r.remarks ?? "";
+          case "createdAt":
+            return fmtDateTime(r.createdAt);
+          case "updatedAt":
+            return fmtDateTime(r.updatedAt);
+          default:
+            return "";
+        }
+      }),
+    );
+
+    const csv = buildCsv(headers, rows);
+    const ts = format(new Date(), "yyyyMMdd_HHmmss", { locale: ja });
+    downloadCsv(`roles_${ts}.csv`, csv);
+  }, [filteredData, table, columnLabels]);
+
+  const kindText =
+    queryState.kinds.length === 0
+      ? "種別: すべて"
+      : `種別: ${queryState.kinds
+          .map(
+            (v) =>
+              new Map(kindOptions.map((o) => [o.value, o.label])).get(v) ?? v,
+          )
+          .join(", ")}`;
+  const statusText =
+    queryState.status === "ALL"
+      ? "状態: すべて"
+      : queryState.status === "ACTIVE"
+        ? "状態: 有効"
+        : "状態: 無効";
+  const visibleColsText = (
+    mounted ? effectiveVisibleColumnIds : (Array.from(allColumnIds) as ColId[])
+  )
+    .map((id) => columnLabels[id])
+    .join(", ");
 
   const filteredCount = filteredData.length;
 
   return (
     <div className="space-y-3">
-      {/* 検索/フィルタ */}
-      <div className="flex flex-wrap items-center gap-3">
-        <Input
-          name="filter-q"
-          data-testid="filter-q"
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-          placeholder="表示ID・コード・表示名で検索"
-          className="w-[240px] basis-full text-sm md:basis-auto"
-          aria-label="検索キーワード"
-        />
+      <DatagridToolbar<ColId>
+        qTitle={`${columnLabels.displayId}/${columnLabels.code}/${columnLabels.nameEffective}/${columnLabels.remarks}`}
+        q={queryState.q}
+        onChangeQ={setQ}
+        columnOptions={allColumnIds.map((id) => ({
+          value: id,
+          label: columnLabels[id],
+        }))}
+        visibleColumnIds={effectiveVisibleColumnIds}
+        onChangeVisibleColumns={setVisibleColumnIds}
+        canDownloadData={canDownloadData}
+        onDownloadCsv={onDownloadCsv}
+        canEditData={canEditData}
+        newHref="/masters/roles/new"
+      />
 
-        <Select
-          value={status}
-          onValueChange={(v) => setStatus(v as StatusFilter)}
-          name="filter-status"
-        >
-          <SelectTrigger className="w-auto" data-testid="filter-status">
-            <SelectValue placeholder="状態" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="ALL">
-              <span className="text-muted-foreground">すべての状態</span>
-            </SelectItem>
-            <SelectItem value="ACTIVE">有効のみ</SelectItem>
-            <SelectItem value="INACTIVE">無効のみ</SelectItem>
-          </SelectContent>
-        </Select>
-      </div>
-
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-3">
         <div className="text-sm" data-testid="count">
           表示件数： {filteredCount} 件
         </div>
-        <Button asChild>
-          <Link href={newPath}>新規登録</Link>
-        </Button>
+        <div className="flex max-w-[60%] items-center justify-end gap-2">
+          <DatagridSummary
+            mounted={mounted}
+            roleText={kindText}
+            statusText={statusText}
+            createdTitle="登録"
+            updatedTitle="更新"
+            createdRangeISO={queryState.createdRange}
+            updatedRangeISO={queryState.updatedRange}
+            createdRange={createdRange}
+            updatedRange={updatedRange}
+            visibleColsText={visibleColsText}
+          />
+          <button
+            type="button"
+            className="text-muted-foreground shrink-0 cursor-pointer text-xs underline"
+            onClick={() => {
+              setQueryState((s) => ({
+                ...s,
+                q: "",
+                kinds: [],
+                status: "ALL",
+                createdRange: undefined,
+                updatedRange: undefined,
+                cols: Array.from(allColumnIds) as ColId[],
+              }));
+              setPersisted((p) => ({ ...p, pageSize: 20 }));
+              table.setPageSize(20);
+            }}
+            title="全フィルタ解除"
+          >
+            全フィルタ解除
+          </button>
+        </div>
       </div>
 
-      {/* テーブル */}
       <div className="overflow-x-auto rounded-md border pb-1">
-        <Table data-testid="roles-table" className="w-full">
-          <TableHeader className="bg-muted/50 text-xs">
+        <Table
+          className="w-full"
+          data-testid="roles-table"
+          containerClassName={
+            !canDownloadData && !canEditData
+              ? "max-h-[calc(100svh_-_244px)] md:max-h-[calc(100svh_-_224px)] overflow-y-auto pb-1"
+              : "max-h-[calc(100svh_-_284px)] md:max-h-[calc(100svh_-_224px)] overflow-y-auto pb-1"
+          }
+        >
+          <TableHeader className="bg-muted/60 supports-[backdrop-filter]:bg-muted/60 sticky top-0 z-20 text-xs backdrop-blur">
             {table.getHeaderGroups().map((hg) => (
               <TableRow key={hg.id}>
                 {hg.headers.map((header) => (
@@ -149,7 +391,7 @@ export default function RolesDataTable<TData extends Role>({
               table.getRowModel().rows.map((row) => (
                 <TableRow
                   key={row.id}
-                  data-testid={`row-${(row.original as Role).displayId}`}
+                  data-testid={`row-${(row.original as DepartmentRoleRow).displayId}`}
                 >
                   {row.getVisibleCells().map((cell) => (
                     <TableCell
@@ -167,7 +409,7 @@ export default function RolesDataTable<TData extends Role>({
             ) : (
               <TableRow>
                 <TableCell
-                  colSpan={columns.length}
+                  colSpan={table.getAllColumns().length}
                   className="text-muted-foreground py-10 text-center text-sm"
                 >
                   条件に一致するロールが見つかりませんでした。
@@ -178,33 +420,14 @@ export default function RolesDataTable<TData extends Role>({
         </Table>
       </div>
 
-      {/* ページング */}
-      <div className="flex items-center justify-end gap-2">
-        <span className="text-muted-foreground text-sm">
-          Page {table.getState().pagination.pageIndex + 1} /{" "}
-          {table.getPageCount() || 1}
-        </span>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => table.previousPage()}
-          disabled={!table.getCanPreviousPage()}
-          data-testid="page-prev"
-          className="cursor-pointer"
-        >
-          前へ
-        </Button>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => table.nextPage()}
-          disabled={!table.getCanNextPage()}
-          data-testid="page-next"
-          className="cursor-pointer"
-        >
-          次へ
-        </Button>
-      </div>
+      <DatagridPagination<DepartmentRoleRow>
+        table={table}
+        pageSize={table.getState().pagination.pageSize}
+        onChangePageSize={(n) => {
+          table.setPageSize(n);
+          setPersisted((p) => ({ ...p, pageSize: n }));
+        }}
+      />
     </div>
   );
 }

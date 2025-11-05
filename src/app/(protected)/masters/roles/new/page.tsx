@@ -1,8 +1,6 @@
-/* =========================
- * src/app/(protected)/masters/roles/new/page.tsx
- * - Users新規ページと統一したヘッダ/パンくず
- * ========================= */
+// src/app/(protected)/masters/roles/new/page.tsx
 import type { Metadata } from "next";
+import { redirect } from "next/navigation";
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -13,16 +11,25 @@ import {
 } from "@/components/ui/breadcrumb";
 import { Separator } from "@/components/ui/separator";
 import { SidebarTrigger } from "@/components/ui/sidebar";
-
+import { guardHrefOrRedirect } from "@/lib/auth/guard.ssr";
 import Client from "./client";
 
 export const metadata: Metadata = {
-  title: "ロール新規登録",
+  title: "ロール新規登録（部署ローカル）",
   description:
-    "共通フォーム（shadcn/ui + React Hook Form + Zod）でロールを新規作成（UIのみ）",
+    "部署ロール（DepartmentRole/custom）を新規作成。shadcn/ui + RHF + Zod + Server Action",
 };
 
-export default function Page() {
+export default async function Page() {
+  // ★ SSR ガードで viewer を取得
+  const viewer = await guardHrefOrRedirect("/masters/roles/new", "/");
+
+  // ★ 編集権限がなければ強制リダイレクト
+  if (!viewer.canEditData) {
+    // guardHrefOrRedirect は内部で redirect() を呼べるので
+    // 明示的に使うなら:
+    return redirect("/");
+  }
   return (
     <>
       <header className="flex h-16 shrink-0 items-center gap-2 transition-[width,height] ease-linear group-has-data-[collapsible=icon]/sidebar-wrapper:h-12">

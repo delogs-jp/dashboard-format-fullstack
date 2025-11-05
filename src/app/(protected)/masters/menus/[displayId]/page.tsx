@@ -10,6 +10,8 @@ import {
 } from "@/components/ui/breadcrumb";
 import { Separator } from "@/components/ui/separator";
 import { SidebarTrigger } from "@/components/ui/sidebar";
+// ★ 追加：SSRガード
+import { guardHrefOrRedirect } from "@/lib/auth/guard.ssr";
 
 import Client from "./client";
 import { getMenuByDisplayId, getParentOptions } from "@/lib/sidebar/menu.mock";
@@ -28,6 +30,8 @@ export const metadata: Metadata = {
 
 export default async function Page({ params }: Props) {
   const { displayId } = await params;
+  // ★ ここで表示可否を判定（未ログイン/権限不足/未定義は内部でredirect）
+  await guardHrefOrRedirect(`/masters/menus/${displayId}`, "/");
 
   // 対象取得（なければ 404）
   const rec = getMenuByDisplayId(displayId);
@@ -55,6 +59,7 @@ export default async function Page({ params }: Props) {
         ? undefined
         : rec.minPriority,
     isActive: rec.isActive,
+    hidden: rec.hidden,
   };
 
   return (

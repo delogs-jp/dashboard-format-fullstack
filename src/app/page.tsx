@@ -7,7 +7,10 @@ import { Badge } from "@/components/ui/badge";
 import LoginForm from "@/components/login/login-form"; // ログインフォームコンポーネント
 import { HandHelping } from "lucide-react"; //追加
 
-export default function Page() {
+type Props = { searchParams: Promise<{ continue?: string }> };
+
+export default async function Page({ searchParams }: Props) {
+  const next = ((await searchParams).continue ?? "").toString();
   return (
     <main className="flex min-h-svh w-full items-center justify-center bg-gray-800 p-6 md:p-10 dark:bg-neutral-800">
       <Card className="w-full max-w-md">
@@ -44,7 +47,7 @@ export default function Page() {
           </p>
         </CardHeader>
         <CardContent className="-mt-4">
-          <LoginForm />
+          <LoginForm continueTo={next} />
           {/* 追加： パスワード忘れの導線 */}
           <Link
             href="/password-forgot"

@@ -30,52 +30,81 @@ import {
   StickyNote,
 } from "lucide-react";
 
+// ★ 追加：SSRガード
+import { guardHrefOrRedirect } from "@/lib/auth/guard.ssr";
+
 export const metadata: Metadata = {
   title: "ダッシュボード",
   description:
     "shadcn/uiを使用した管理画面レイアウトの概要をまとめています。制作過程のわかる記事やGithubへのリンクを記載しています。",
 };
 
-export default function Page() {
+export default async function Page() {
+  // ★ ここで表示可否を判定（未ログイン/権限不足/未定義は内部でredirect）
+  await guardHrefOrRedirect("/dashboard", "/");
+
   const articles = [
     {
-      title: "【管理画面フォーマット制作編 #1】 Shadcn/uiで作るログイン画面",
-      href: "https://delogs.jp/next-js/shadcn-ui/login-form",
+      title:
+        "[管理画面フォーマット開発編 #1] Prisma × PostgreSQLで進めるDB設計",
+      href: "https://delogs.jp/next-js/backend/format-prisma-db-design",
     },
     {
       title:
-        "【管理画面フォーマット制作編 #2】 Shadcn/uiで作るログイン後の管理画面レイアウト",
-      href: "https://delogs.jp/next-js/shadcn-ui/dashboard-layout",
+        "[管理画面フォーマット開発編 #2] JWT +Cookie＋middlewareで実装するログイン機能",
+      href: "https://delogs.jp/next-js/backend/format-login",
     },
     {
       title:
-        "【管理画面フォーマット制作編 #3】 ユーザ管理UI ─ 詳細・新規・編集フォーム実装",
-      href: "https://delogs.jp/next-js/shadcn-ui/user-management-ui",
+        "[管理画面フォーマット開発編 #3] AuthProviderでログイン済みユーザー情報を全体共有",
+      href: "https://delogs.jp/next-js/backend/format-auth-provider",
     },
     {
       title:
-        "【管理画面フォーマット制作編 #4】 サイドバーのメニューと参照中ページの同期",
-      href: "https://delogs.jp/next-js/shadcn-ui/sidebar-active-sync",
+        "[管理画面フォーマット開発編 #4] Server Actionで実装するアバター画像のアップロードと表示",
+      href: "https://delogs.jp/next-js/backend/format-avatar-upload",
+    },
+    {
+      title: "[管理画面フォーマット開発編 #5] ユーザプロフィール更新",
+      href: "https://delogs.jp/next-js/backend/format-profile",
     },
     {
       title:
-        "【管理画面フォーマット制作編 #5】 ユーザープロフィールUI ─ 情報確認・編集・パスワード変更",
-      href: "https://delogs.jp/next-js/shadcn-ui/user-profile-ui",
+        "[管理画面フォーマット開発編 #6] RBAC調整 ─ ページ単位のアクセス制御を実装する",
+      href: "https://delogs.jp/next-js/backend/format-rbac-guard",
+    },
+    {
+      title: "[管理画面フォーマット開発編 #7] ユーザ管理UIをDB連携する",
+      href: "https://delogs.jp/next-js/backend/format-users",
     },
     {
       title:
-        "【管理画面フォーマット制作編 #6】 マスタ管理-ロール管理（UIのみ）",
-      href: "https://delogs.jp/next-js/shadcn-ui/format-role-ui",
+        "[管理画面フォーマット開発編 #8 前編] 部署別ロール ─ DepartmentRoleテーブル導入とDB設計",
+      href: "https://delogs.jp/next-js/backend/format-department-role-db",
     },
     {
       title:
-        "【管理画面フォーマット制作編 #7】 サイドバーメニュー管理UI ─ 3層・並び順・priority可視制御まで",
-      href: "https://delogs.jp/next-js/shadcn-ui/format-menu-ui",
+        "[管理画面フォーマット開発編 #8 後編] 部署別ロール ─ 管理UIとServer Action実装",
+      href: "https://delogs.jp/next-js/backend/format-department-role-ui",
     },
     {
       title:
-        "【管理画面フォーマット制作編 #8】 ログイン後404ページ + ログイン前のパスワード忘れ導線UI",
-      href: "https://delogs.jp/next-js/shadcn-ui/format-404-password-forgot",
+        "[管理画面フォーマット開発編 #9 前編] 部署別ロール対応 ─ ユーザ管理の改修",
+      href: "https://delogs.jp/next-js/backend/format-department-role-users",
+    },
+    {
+      title:
+        "[管理画面フォーマット開発編 #9 後編] 部署別ロール対応 ─ プロフィール管理の改修",
+      href: "https://delogs.jp/next-js/backend/format-department-role-profile",
+    },
+    {
+      title: "[管理画面フォーマット開発編 #10] メニュー管理UIをDB連携する",
+      href: "https://delogs.jp/next-js/backend/format-department-menu",
+    },
+    {
+      title:
+        "[管理画面フォーマット開発編 #11] パスワード再発行依頼とメールテンプレート統合",
+      href: "https://delogs.jp/next-js/backend/format-password-request",
     },
   ];
 
@@ -104,20 +133,14 @@ export default function Page() {
         <div className="flex flex-col gap-2">
           <div className="flex flex-wrap items-center gap-2">
             <h1 className="text-2xl font-semibold tracking-tight">
-              管理画面フォーマット（UIのみ版）のデモページ
+              管理画面フォーマット（DB連携版）のデモページ
             </h1>
             <Badge variant="secondary" className="rounded-full">
               Demo
             </Badge>
-            <Badge className="rounded-full" variant="outline">
-              UI Only
-            </Badge>
           </div>
           <p className="text-muted-foreground">
-            このデモはUIのみを構築したものです。DBとの連携はしていませんが、登録・更新・削除については
-            <span className="font-medium">バリデーション</span>
-            まで実装し、通過時に成功判定となるようにしています。
-            DBと連携したバージョンは別途構築予定で、将来の連携を見据えた構成にしています。
+            このデモはUIのみ版を改良してDB連携したものです。
           </p>
         </div>
 
@@ -128,7 +151,7 @@ export default function Page() {
           <AlertDescription>
             入力フォームは
             <span className="font-medium">Zod + React Hook Form</span>
-            に準拠した基本形です。エンドポイントへは送信しないため、データは保存されません。
+            によるバリデーションを行い、サーバアクションでDBへの登録・更新・削除を行います。
           </AlertDescription>
         </Alert>
 
@@ -181,11 +204,11 @@ export default function Page() {
               <CardContent className="space-y-3">
                 <Button asChild className="w-full">
                   <Link
-                    href="https://github.com/delogs-jp/dashboard-format-ui"
+                    href="https://github.com/delogs-jp/dashboard-format-fullstack"
                     target="_blank"
                     rel="noreferrer"
                   >
-                    delogs-jp/dashboard-format-ui
+                    delogs-jp/dashboard-format-fullstack
                     <ExternalLink className="ml-2 size-4 opacity-80" />
                   </Link>
                 </Button>

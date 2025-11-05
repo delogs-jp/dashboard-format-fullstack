@@ -1,10 +1,6 @@
 // src/lib/users/schema.ts
 import { z } from "zod";
-
-/** ── 追加：ロールの定数と型 ── */
-import type { Role } from "@/lib/roles/schema";
-import { ROLE_CODES } from "@/lib/roles/mock"; // ← ロール一覧を取得
-export type RoleCode = Role["code"]; // ← ロール実体に追随
+import { toAsciiEmailSafe } from "@/lib/email/normalize";
 
 /** ── 入力ルール（数字はあとから見直しやすいよう定数化） ── */
 export const NAME_MAX = 100 as const;
@@ -22,8 +18,11 @@ const nameSchema = z
   .min(1, "氏名を入力してください")
   .max(NAME_MAX, `${NAME_MAX}文字以内で入力してください`);
 
-//  変更: 既存の emailSchema を export へ昇格
-export const emailSchema = z.email("メールアドレスの形式が正しくありません");
+// ★ 変更：transform + pipe で ASCII 化してから形式検証
+export const emailSchema = z
+  .string()
+  .transform((s) => toAsciiEmailSafe(s))
+  .pipe(z.email("メールアドレスの形式が正しくありません"));
 
 // パスワード用
 const passwordSchema = z
@@ -34,15 +33,38 @@ const passwordSchema = z
   .regex(/[a-z]/, "小文字を1文字以上含めてください。")
   .regex(/[0-9]/, "数字を1文字以上含めてください。");
 
-const roleCodeSchema = z.enum(ROLE_CODES, "ロールを選択してください");
+/** ★ 新規：単一セレクトの XOR 値を検証（"role:<uuid>" or "dr:<uuid>"） */
+const UUID_RE =
+  /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
+
+export const assignedRoleSchema = z
+  .string()
+  .min(1, "ロールを選択してください")
+  .refine(
+    (v) => v.startsWith("role:") || v.startsWith("dr:"),
+    "ロールの指定が不正です",
+  )
+  .refine((v) => UUID_RE.test(v.split(":")[1] ?? ""), "ロールの指定が不正です");
+
+const phoneSchema = z
+  .string()
+  .max(50, "50文字以内で入力してください")
+  .optional();
+
+const remarksSchema = z
+  .string()
+  .max(255, "255文字以内で入力してください")
+  .optional();
 
 /** ── 新規作成用：password が必須 ── */
 export const userCreateSchema = z.object({
   name: nameSchema,
   email: emailSchema,
-  roleCode: roleCodeSchema,
+  roleCode: assignedRoleSchema,
   password: passwordSchema, // パスワード変更でも使うので共通化
   isActive: z.boolean(),
+  phone: phoneSchema,
+  remarks: remarksSchema,
 });
 
 /** ── 編集用：displayId を表示専用で扱い、password は扱わない ── */
@@ -50,15 +72,16 @@ export const userUpdateSchema = z.object({
   displayId: z.string().min(1, "表示IDの取得に失敗しました"),
   name: nameSchema,
   email: emailSchema,
-  roleCode: roleCodeSchema,
+  roleCode: assignedRoleSchema,
   isActive: z.boolean(),
+  phone: phoneSchema,
+  remarks: remarksSchema,
 });
 
-/** 追記：── プロフィール（本人用）: displayId は UI に出さない。role は「表示のみ」 ── */
+/** ── プロフィール（本人用）: displayId は UI に出さない。role は「表示のみ」 ── */
 export const profileUpdateSchema = z.object({
-  name: nameSchema, //共通化したものを利用
-
-  // UIのみ: 画像ファイルの基本チェック（拡張子・容量）
+  name: nameSchema,
+  phone: phoneSchema, // 追加
   avatarFile: z
     .instanceof(File)
     .optional()
@@ -77,15 +100,20 @@ export const profileUpdateSchema = z.object({
 });
 
 /** 追記：── プロフィール（本人用）のメール変更フォーム（本人用／確認メールを送るだけ） ── */
-export const emailChangeSchema = (currentEmail: string) =>
-  z.object({
+export const emailChangeSchema = (currentEmail: string) => {
+  const currentAscii = toAsciiEmailSafe(currentEmail);
+
+  return z.object({
     newEmail: z
-      .email("メールアドレスの形式が正しくありません")
+      .string()
+      .transform((s) => toAsciiEmailSafe(s)) // 入力直後に punycode 化
+      .pipe(z.email("メールアドレスの形式が正しくありません")) // その結果を検証
       .refine(
-        (v) => v.trim().toLowerCase() !== currentEmail.trim().toLowerCase(),
+        (v) => v !== currentAscii,
         "現在のメールアドレスと同じです。別のメールアドレスを入力してください",
       ),
   });
+};
 
 /** ── パスワード変更（本人） ─────────────────── */
 export const passwordChangeSchema = z.object({
@@ -100,17 +128,6 @@ export const accountIdSchema = z
   .regex(/[A-Z]/, "大文字を1文字以上含めてください。")
   .regex(/[a-z]/, "小文字を1文字以上含めてください。")
   .regex(/[0-9]/, "数字を1文字以上含めてください。");
-
-export const loginSchema = z.object({
-  accountId: accountIdSchema,
-  email: z.email("有効なメールアドレスを入力してください。"),
-  password: z
-    .string()
-    .min(15, "パスワードは15文字以上で入力してください。")
-    .regex(/[A-Z]/, "大文字を1文字以上含めてください。")
-    .regex(/[a-z]/, "小文字を1文字以上含めてください。")
-    .regex(/[0-9]/, "数字を1文字以上含めてください。"),
-});
 
 /** ── Zod から型を派生（z.infer を使う） ── */
 export type UserCreateValues = z.infer<typeof userCreateSchema>;

@@ -1,3 +1,4 @@
+// src/lib/sidebar/mock-team.ts
 export type Team = {
   name: string;
   icon: string;

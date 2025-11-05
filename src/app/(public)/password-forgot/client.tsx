@@ -3,24 +3,30 @@
 
 import { useState } from "react";
 import { toast } from "sonner";
-import PasswordForgotForm from "@/components/login/password-forgot-form";
+import PasswordForgotForm, {
+  type ForgotRequestValues,
+} from "@/components/login/password-forgot-form";
+import { passwordForgotAction } from "@/app/_actions/auth/password-forgot";
 
 export default function PasswordForgotClient() {
   const [loading, setLoading] = useState(false);
   const [submitted, setSubmitted] = useState(false);
 
-  const handleSubmit = async () => {
+  const handleSubmit = async (values: ForgotRequestValues) => {
     if (submitted) return; // 二重送信ガード（念のため）
     setLoading(true);
     try {
-      // 将来: Server Action に置換
-      await new Promise((r) => setTimeout(r, 700));
-      setSubmitted(true);
-      toast.success("依頼を受け付けました。登録メールをご確認ください。");
+      const res = await passwordForgotAction(values);
+      if (res.ok) {
+        setSubmitted(true);
+        toast.success("依頼を受け付けました。登録メールをご確認ください。");
+      } else {
+        // 入力不正 or 障害時：存在を明かさない曖昧メッセージ
+        toast.error("送信内容を確認してください。");
+      }
     } catch {
-      // エラー時も秘匿（受付メッセージは同一）
-      setSubmitted(true);
-      toast.success("依頼を受け付けました。登録メールをご確認ください。");
+      // 通信例外：曖昧メッセージ（存在秘匿維持）
+      toast.error("エラーが発生しました。時間をおいて再度お試しください。");
     } finally {
       setLoading(false);
     }

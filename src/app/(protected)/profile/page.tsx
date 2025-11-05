@@ -10,7 +10,8 @@ import {
 } from "@/components/ui/breadcrumb";
 import { Separator } from "@/components/ui/separator";
 import { SidebarTrigger } from "@/components/ui/sidebar";
-
+import { guardHrefOrRedirect } from "@/lib/auth/guard.ssr";
+import { getMyProfileDetail } from "@/app/_actions/profile/get-profile-detail"; // 追加
 import Client from "./client";
 
 export const metadata: Metadata = {
@@ -20,8 +21,12 @@ export const metadata: Metadata = {
 };
 
 export default async function Page() {
-  // 本人限定のため、SSR側で displayId は不要（セッション前提）。
-  // UI記事ではモックに任せ、ここでは何も取得しない。
+  await guardHrefOrRedirect("/profile", "/");
+
+  // ★ ここで実効ロールと電話番号取得
+  const res = await getMyProfileDetail();
+  if (!res.ok || !res.value) return null;
+
   return (
     <>
       <header className="flex h-16 shrink-0 items-center gap-2 transition-[width,height] ease-linear group-has-data-[collapsible=icon]/sidebar-wrapper:h-12">
@@ -45,9 +50,9 @@ export default async function Page() {
         </div>
       </header>
 
-      {/* ← コンテナは SSR 側に集約 */}
+      {/* クライアントコンポーネントへ実効ロール等を提供 */}
       <div className="max-w-xl p-4 pt-0">
-        <Client />
+        <Client initial={res.value} />
       </div>
     </>
   );

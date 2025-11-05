@@ -10,15 +10,12 @@ import {
   BreadcrumbSeparator,
 } from "@/components/ui/breadcrumb";
 import { Separator } from "@/components/ui/separator";
-
+import { guardHrefOrRedirect } from "@/lib/auth/guard.ssr";
+import { prisma } from "@/lib/database";
+import * as punycode from "punycode/";
+import { getEffectiveRole } from "@/lib/auth/effective-role"; // ★ 追加
 import DataTable from "./data-table";
-import { columns } from "./columns";
-
-import {
-  CURRENT_ACCOUNT_CODE,
-  getUsersByAccount,
-  mockRoleOptions,
-} from "@/lib/users/mock";
+import { columns, type UserRow } from "./columns";
 
 export const metadata: Metadata = {
   title: "ユーザ一覧",
@@ -27,10 +24,72 @@ export const metadata: Metadata = {
 };
 
 export default async function Page() {
-  // UIのみ：ログイン中アカウント配下のユーザをモックから取得
-  const accountCode = CURRENT_ACCOUNT_CODE;
-  const all = getUsersByAccount(accountCode);
-  const users = all.filter((u) => !u.deletedAt); // 論理削除は一覧非表示
+  // 1) ページ閲覧ガード（未ログイン/権限不足なら内部でredirect）
+  const viewer = await guardHrefOrRedirect("/users", "/");
+
+  // 2) 自分の departmentId を userId から解決（スナップショット非保持方針）
+  const me = await prisma.user.findUnique({
+    where: { id: viewer.userId },
+    select: { departmentId: true },
+  });
+  if (!me) return null; // 想定外
+
+  // 3) 部署内・未削除ユーザの取得（必要列のみ）
+  const usersRaw = await prisma.user.findMany({
+    where: { departmentId: me.departmentId, deletedAt: null },
+    orderBy: { createdAt: "desc" },
+    select: {
+      displayId: true,
+      name: true,
+      email: true,
+      isActive: true,
+      phone: true,
+      remarks: true,
+      createdAt: true,
+      updatedAt: true,
+      roleId: true,
+      departmentRoleId: true,
+    },
+  });
+
+  // ★ 実効ロールへ正規化
+  const users: UserRow[] = await Promise.all(
+    usersRaw.map(async (u) => {
+      // ★ ユニオンが確定するように分岐して渡す
+      const eff = u.departmentRoleId
+        ? await getEffectiveRole({
+            departmentId: me.departmentId,
+            departmentRoleId: u.departmentRoleId,
+          })
+        : u.roleId
+          ? await getEffectiveRole({
+              departmentId: me.departmentId,
+              roleId: u.roleId,
+            })
+          : null; // 両方 null は想定外だが安全側で null
+
+      return {
+        displayId: u.displayId,
+        name: u.name,
+        email: punycode.toUnicode(u.email),
+        roleCode: eff?.code ?? "",
+        roleName: eff?.name ?? "(不明)",
+        roleBadgeColor: eff?.badgeColor ?? null,
+        isActive: u.isActive,
+        phone: u.phone,
+        remarks: u.remarks,
+        createdAt: u.createdAt,
+        updatedAt: u.updatedAt,
+      };
+    }),
+  );
+
+  // 5) フィルタ用ロール選択肢（一覧に登場するロールだけ）
+  const roleOptions = Array.from(
+    new Map(
+      users.map((u) => [u.roleCode, { value: u.roleCode, label: u.roleName }]),
+    ).values(),
+  );
 
   return (
     <>
@@ -55,11 +114,13 @@ export default async function Page() {
         </div>
       </header>
 
-      <div className="container p-4 pt-0">
+      <div className="w-full max-w-[1729px] p-4 pt-0">
         <DataTable
           columns={columns}
           data={users}
-          roleOptions={mockRoleOptions}
+          roleOptions={roleOptions}
+          canDownloadData={viewer.canDownloadData}
+          canEditData={viewer.canEditData}
         />
       </div>
     </>

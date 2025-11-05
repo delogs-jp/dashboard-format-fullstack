@@ -1,4 +1,5 @@
 // src/app/(protected)/profile/email/page.tsx（新規：SSR）
+
 import type { Metadata } from "next";
 import {
   Breadcrumb,
@@ -10,6 +11,8 @@ import {
 } from "@/components/ui/breadcrumb";
 import { Separator } from "@/components/ui/separator";
 import { SidebarTrigger } from "@/components/ui/sidebar";
+// ★ 追加：SSRガード
+import { guardHrefOrRedirect } from "@/lib/auth/guard.ssr";
 import Client from "./client";
 
 export const metadata: Metadata = {
@@ -19,6 +22,9 @@ export const metadata: Metadata = {
 };
 
 export default async function Page() {
+  // ★ ここで表示可否を判定（未ログイン/権限不足/未定義は内部でredirect）
+  await guardHrefOrRedirect("/profile/email", "/");
+
   return (
     <>
       <header className="flex h-16 shrink-0 items-center gap-2 transition-[width,height] ease-linear group-has-data-[collapsible=icon]/sidebar-wrapper:h-12">

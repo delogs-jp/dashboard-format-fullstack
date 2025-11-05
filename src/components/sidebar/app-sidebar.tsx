@@ -17,18 +17,32 @@ import {
 } from "@/components/ui/sidebar";
 
 import { mockTeam } from "@/lib/sidebar/mock-team";
-import { mockUser } from "@/lib/sidebar/mock-user";
-
-// ★ 単一出所に統一：ここからメニューを取る
-//import { MENU } from "@/lib/sidebar/menu.schema";
-import { getMenus } from "@/lib/sidebar/menu.mock"; // MenuRecord[] を返す
 import { toMenuTree } from "@/lib/sidebar/menu.transform"; // 変換レイヤ
 
-export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
-  // ① MenuRecord[] を取得（UIモックストア）
-  const records = getMenus();
-  // ② MenuTree に変換（useMemo で安定化）
-  const tree = useMemo(() => toMenuTree(records), [records]);
+// ← ★ 追加：RBAC フィルタ
+import { filterMenuRecordsByPriority } from "@/lib/sidebar/menu.rbac";
+// ← ★ 追加：AuthContext から優先度を取得
+import { useAuth } from "@/lib/auth/context";
+import type { MenuRecord } from "@/lib/sidebar/menu.schema";
+
+type Props = React.ComponentProps<typeof Sidebar> & {
+  /** RSC（layout）から渡される部署別メニュー */
+  records: MenuRecord[];
+};
+
+export function AppSidebar({ records, ...props }: Props) {
+  const { user } = useAuth(); // user?.rolePriority を使う
+  // 依存に使う“安定したプリミティブ”へ切り出し
+  const rolePriority = user?.rolePriority ?? 0;
+
+  const tree = useMemo(() => {
+    const filtered = filterMenuRecordsByPriority(
+      records.filter((r) => !r.hidden), // ← ここで非表示を除外
+      rolePriority,
+    );
+    return toMenuTree(filtered);
+  }, [rolePriority, records]);
+
   return (
     <Sidebar collapsible="icon" {...props}>
       <SidebarHeader>
@@ -36,7 +50,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
       </SidebarHeader>
 
       <SidebarContent>
-        {/* a11y ランドマーク：メインメニュー */}
+        {/* priorityを利用したメニュー表示 */}
         <nav aria-label="メインメニュー">
           <NavMain items={tree} />
         </nav>
@@ -44,7 +58,8 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
 
       <SidebarFooter>
         <ModeToggle className="ml-auto" />
-        <NavUser user={mockUser} />
+        {/* Contextを利用したユーザ情報表示 */}
+        <NavUser />
       </SidebarFooter>
 
       <SidebarRail />

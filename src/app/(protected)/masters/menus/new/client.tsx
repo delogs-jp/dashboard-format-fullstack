@@ -34,6 +34,8 @@ export default function NewMenuClient({ parentOptions, iconOptions }: Props) {
           iconName: values.iconName || undefined,
           minPriority: values.minPriority, // number | undefined
           isActive: values.isActive,
+          hidden: values.hidden,
+          lockHiddenOverride: false,
         });
 
         toast.success("メニューを作成しました", {

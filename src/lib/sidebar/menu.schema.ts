@@ -1,7 +1,4 @@
-/**
- * src/lib/sidebar/menu.schema.ts
- */
-
+// src/lib/sidebar/menu.schema.ts
 import { z } from "zod";
 import type { LucideIcon } from "lucide-react";
 
@@ -53,6 +50,9 @@ export const menuRecordSchema = z
     minPriority: z.number().int().positive().optional(),
     isSection: z.boolean().default(false),
     isActive: z.boolean(),
+    // ★ 追加: ナビには出さないが RBAC 判定には使いたい時に true
+    hidden: z.boolean().default(false),
+    lockHiddenOverride: z.boolean().default(false),
   })
   .superRefine((val, ctx) => {
     // 見出しノードのときはリンク関連を禁止
@@ -101,6 +101,8 @@ export const menuCreateSchema = z
       .optional()
       .transform((v) => (v === "" || v === undefined ? undefined : Number(v))),
     isActive: z.boolean().default(true),
+    // ★ 追加: 作成フォームからも hidden を設定可能に
+    hidden: z.boolean().default(false),
   })
   .superRefine((val, ctx) => {
     // ★ 見出しではリンク系禁止（既存）

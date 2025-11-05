@@ -1,4 +1,7 @@
+// src/components/sidebar/nav-user.tsx
 "use client";
+import { useTransition } from "react"; // ★ 追加
+import { logoutAction } from "@/app/_actions/auth/logout"; // ★ 追加
 import Link from "next/link";
 import {
   Bell,
@@ -8,7 +11,6 @@ import {
   User as UserIcon,
 } from "lucide-react";
 
-import type { User } from "@/lib/sidebar/mock-user";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
   DropdownMenu,
@@ -26,8 +28,25 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar";
 
-export function NavUser({ user }: { user: User }) {
+import { useAuth } from "@/lib/auth/context";
+
+export function NavUser() {
   const { isMobile } = useSidebar();
+  const [pending, startTransition] = useTransition(); // ★ 追加
+
+  const { user } = useAuth();
+
+  const name = user?.name ?? "ゲスト";
+  const email = user?.email ?? "";
+  const avatarUrl = user?.avatarUrl ?? "/user-avatar.png"; // 後続章で保護配信URLへ置換
+  const initial = name.slice(0, 1);
+
+  const handleLogout = () => {
+    if (pending) return; // ★ 二重実行防止
+    startTransition(async () => {
+      await logoutAction(); // サーバ側で Cookie 削除 + Session 失効 + redirect("/login")
+    });
+  };
 
   return (
     <SidebarMenu>
@@ -38,18 +57,23 @@ export function NavUser({ user }: { user: User }) {
               size="lg"
               className="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground"
               aria-label="ユーザーメニューを開く"
+              disabled={!user} // 未ログイン時は操作不可
             >
               <Avatar className="h-8 w-8 rounded-lg">
                 {/* 画像は next/image でもOKだが AvatarImage で十分 */}
-                <AvatarImage src={user.avatar} alt={user.name} />
+                <AvatarImage src={avatarUrl} alt={name} />
                 <AvatarFallback className="rounded-lg">
-                  {user.name.slice(0, 1)}
+                  {initial}
                 </AvatarFallback>
               </Avatar>
               <div className="grid flex-1 text-left text-sm leading-tight">
-                <span className="truncate font-medium">{user.name}</span>
+                <span className="truncate font-medium">{name}</span>
                 <span className="text-muted-foreground truncate text-xs">
-                  {user.email}
+                  {email && (
+                    <span className="text-muted-foreground truncate text-xs">
+                      {email}
+                    </span>
+                  )}
                 </span>
               </div>
               <ChevronsUpDown className="ml-auto size-4" />
@@ -66,16 +90,18 @@ export function NavUser({ user }: { user: User }) {
             <DropdownMenuLabel className="p-0 font-normal">
               <div className="flex items-center gap-2 px-1 py-1.5 text-left text-sm">
                 <Avatar className="h-8 w-8 rounded-lg">
-                  <AvatarImage src={user.avatar} alt={user.name} />
+                  <AvatarImage src={avatarUrl} alt={name} />
                   <AvatarFallback className="rounded-lg">
-                    {user.name.slice(0, 1)}
+                    {initial}
                   </AvatarFallback>
                 </Avatar>
                 <div className="grid flex-1 text-left text-sm leading-tight">
-                  <span className="truncate font-medium">{user.name}</span>
-                  <span className="text-muted-foreground truncate text-xs">
-                    {user.email}
-                  </span>
+                  <span className="truncate font-medium">{name}</span>
+                  {email && (
+                    <span className="text-muted-foreground truncate text-xs">
+                      {email}
+                    </span>
+                  )}
                 </div>
               </div>
             </DropdownMenuLabel>
@@ -113,15 +139,15 @@ export function NavUser({ user }: { user: User }) {
 
             <DropdownMenuSeparator />
 
-            <DropdownMenuItem asChild>
-              {/* TODO: /api/logout などにPOST。UIだけなら href="#" でOK */}
-              <Link
-                href="/"
-                className="text-destructive flex items-center gap-2"
-              >
-                <LogOut className="size-4" />
-                ログアウト
-              </Link>
+            {/* ★ ここを Link ではなく onClick で Action 直結 */}
+            <DropdownMenuItem
+              onClick={handleLogout}
+              disabled={pending}
+              className="text-destructive flex cursor-pointer items-center gap-2"
+              aria-disabled={pending}
+            >
+              <LogOut className="size-4" />
+              {pending ? "ログアウト中..." : "ログアウト"}
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>

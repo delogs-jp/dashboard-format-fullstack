@@ -25,6 +25,8 @@ import { SidebarTrigger } from "@/components/ui/sidebar";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils"; // あれば（なければ className を直書きでもOK）
 import { ShieldCheck, Database, Tags, FolderCog } from "lucide-react";
+// ★ 追加：SSRガード
+import { guardHrefOrRedirect } from "@/lib/auth/guard.ssr";
 
 export const metadata: Metadata = {
   title: "マスタ管理",
@@ -79,7 +81,9 @@ const MASTER_CARDS: MasterCard[] = [
   },
 ];
 
-export default function Page() {
+export default async function Page() {
+  // ★ ここで表示可否を判定（未ログイン/権限不足/未定義は内部でredirect）
+  await guardHrefOrRedirect("/masters", "/");
   return (
     <>
       {/* ヘッダ（既存ページと同じ構成） */}

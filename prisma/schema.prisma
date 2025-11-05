@@ -1,0 +1,489 @@
+// prisma/schema.prisma
+
+// ==============================
+// Generator / DataSource
+// ==============================
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ==============================
+// Enums
+// ==============================
+enum MenuMatchMode {
+  exact
+  prefix
+  regex
+}
+
+enum EmailChangeStatus {
+  PENDING    // 本人認証前 or 認証直後（承認待ち）
+  VERIFIED   // 本人が認証URLを踏んだ
+  APPROVED   // 管理者が承認
+  REJECTED   // 管理者が却下
+  EXPIRED    // 有効期限切れ
+}
+
+enum PasswordRequestStatus {
+  PENDING   // 受付済（未処理）
+  ISSUED    // 管理者が再発行を実行
+  REJECTED  // 管理者が依頼を却下
+}
+
+// ==============================
+// Account 系
+// ==============================
+model Account {
+  // 主キー / 識別
+  id        String    @id @default(uuid())
+  displayId String    @unique @default(dbgenerated("generate_display_id('account_display_id_seq','AC')")) @db.VarChar(10)
+  // 共通
+  isActive  Boolean   @default(true)
+  createdAt DateTime  @default(now()) @db.Timestamptz
+  updatedAt DateTime  @updatedAt      @db.Timestamptz
+  deletedAt DateTime?                  @db.Timestamptz
+
+  // 本体
+  name                String
+  headquartersAddress String?
+  invoiceNumber       String?
+  remarks             String?
+
+  // リレーション
+  branches Branch[]
+
+  @@index([isActive])
+  @@index([createdAt])
+}
+
+model Branch {
+  id        String    @id @default(uuid())
+  displayId String    @unique @default(dbgenerated("generate_display_id('branch_display_id_seq','BR')")) @db.VarChar(10)
+  isActive  Boolean   @default(true)
+  createdAt DateTime  @default(now()) @db.Timestamptz
+  updatedAt DateTime  @updatedAt      @db.Timestamptz
+  deletedAt DateTime?                  @db.Timestamptz
+
+  accountId String
+  name      String
+  address   String?
+  remarks   String?
+
+  // リレーション
+  account     Account      @relation(fields: [accountId], references: [id], onDelete: Restrict)
+  departments Department[]
+
+  @@index([accountId])
+  @@index([isActive])
+  @@index([createdAt])
+}
+
+model Department {
+  id        String    @id @default(uuid())
+  displayId String    @unique @default(dbgenerated("generate_display_id('department_display_id_seq','DP')")) @db.VarChar(10)
+  isActive  Boolean   @default(true)
+  createdAt DateTime  @default(now()) @db.Timestamptz
+  updatedAt DateTime  @updatedAt      @db.Timestamptz
+  deletedAt DateTime?                  @db.Timestamptz
+
+  // ログイン用コード（人間入力・推測困難な固定文字列）
+  code String @unique
+
+  branchId String
+  name     String
+  phone    String?
+  remarks  String?
+
+  // リレーション
+  branch        Branch         @relation(fields: [branchId], references: [id], onDelete: Restrict)
+  contacts      Contact[]
+  subscriptions Subscription[]
+  users         User[]
+  // ↓追加
+  departmentRoles DepartmentRole[]
+
+   /// 逆リレーション: 部署に紐づく許可ドメイン一覧
+  allowedDomains         AllowedEmailDomain[] 
+  /// 逆リレーション: 部署配下ユーザーのメール変更申請
+  emailChangeRequests    EmailChangeRequest[] 
+  /// 逆リレーション: 部署ごとのメニュー上書き
+  departmentMenus        DepartmentMenu[]
+  // 追加: パスワード再発行依頼（この部署宛）
+  passwordRequests       PasswordRequest[]
+
+  @@index([branchId])
+  @@index([isActive])
+  @@index([createdAt])
+}
+
+model Contact {
+  id        String    @id @default(uuid())
+  displayId String    @unique @default(dbgenerated("generate_display_id('contact_display_id_seq','CT')")) @db.VarChar(10)
+  isActive  Boolean   @default(true)
+  createdAt DateTime  @default(now()) @db.Timestamptz
+  updatedAt DateTime  @updatedAt      @db.Timestamptz
+  deletedAt DateTime?                  @db.Timestamptz
+
+  departmentId String
+  name         String
+  email        String?
+  phone        String?
+  duty         String? // 担当区分（契約/請求/技術 等）
+  remarks      String?
+
+  // リレーション
+  department Department @relation(fields: [departmentId], references: [id], onDelete: Restrict)
+
+  @@index([departmentId])
+  @@index([isActive])
+  @@index([createdAt])
+}
+
+model Subscription {
+  id        String    @id @default(uuid())
+  displayId String    @unique @default(dbgenerated("generate_display_id('subscription_display_id_seq','SB')")) @db.VarChar(10)
+  isActive  Boolean   @default(true)
+  createdAt DateTime  @default(now()) @db.Timestamptz
+  updatedAt DateTime  @updatedAt      @db.Timestamptz
+  deletedAt DateTime?                  @db.Timestamptz
+
+  departmentId String
+  statusId     String
+  planId       String
+  startDate    DateTime  @db.Date
+  endDate      DateTime? @db.Date
+  remarks      String?
+
+  // リレーション
+  department Department         @relation(fields: [departmentId], references: [id], onDelete: Restrict)
+  status     SubscriptionStatus @relation(fields: [statusId], references: [id], onDelete: Restrict)
+  plan       SubscriptionPlan   @relation(fields: [planId], references: [id], onDelete: Restrict)
+
+  @@index([departmentId])
+  @@index([statusId])
+  @@index([planId])
+  @@index([startDate])
+  @@index([isActive])
+}
+
+model SubscriptionStatus {
+  id        String    @id @default(uuid())
+  isActive  Boolean   @default(true)
+  createdAt DateTime  @default(now()) @db.Timestamptz
+  updatedAt DateTime  @updatedAt      @db.Timestamptz
+  deletedAt DateTime?                  @db.Timestamptz
+
+  code        String  @unique
+  name        String
+  description String?
+
+  subscriptions Subscription[]
+
+  @@index([isActive])
+}
+
+model SubscriptionPlan {
+  id        String    @id @default(uuid())
+  isActive  Boolean   @default(true)
+  createdAt DateTime  @default(now()) @db.Timestamptz
+  updatedAt DateTime  @updatedAt      @db.Timestamptz
+  deletedAt DateTime?                  @db.Timestamptz
+
+  code         String   @unique
+  name         String
+  description  String?
+  monthlyPrice Decimal?
+
+  subscriptions Subscription[]
+
+  @@index([isActive])
+}
+
+// ==============================
+// User / Role
+// ==============================
+model Role {
+  id        String    @id @default(uuid())
+  displayId String    @unique @default(dbgenerated("generate_display_id('role_display_id_seq','RL')")) @db.VarChar(10)
+  isActive  Boolean   @default(true)
+  createdAt DateTime  @default(now()) @db.Timestamptz
+  updatedAt DateTime  @updatedAt      @db.Timestamptz
+  deletedAt DateTime?                  @db.Timestamptz
+
+  code            String  @unique // 例: ADMIN / EDITOR / VIEWER ...
+  name            String
+  priority        Int
+  badgeColor      String?
+  isSystem        Boolean @default(false)
+  canDownloadData Boolean
+  canEditData     Boolean
+  remarks         String?
+
+  users User[]
+  // ↓追加
+  departmentRoles DepartmentRole[]
+
+  @@index([priority])
+  @@index([isActive])
+}
+
+model User {
+  id        String    @id @default(uuid())
+  displayId String    @unique @default(dbgenerated("generate_display_id('user_display_id_seq','US')")) @db.VarChar(10)
+  isActive  Boolean   @default(true)
+  createdAt DateTime  @default(now()) @db.Timestamptz
+  updatedAt DateTime  @updatedAt      @db.Timestamptz
+  deletedAt DateTime?                  @db.Timestamptz
+
+  departmentId     String
+  roleId           String?
+  email            String 
+  hashedPassword   String
+  name             String
+  phone            String?
+  remarks          String?
+  departmentRoleId  String? // ← 追加
+
+  // ログイン失敗ロック
+  failedLoginCount Int       @default(0)
+  lockedUntil      DateTime? @db.Timestamptz
+
+  // アバター画像
+  avatar           String?   // UUID＋拡張子を格納
+
+  // リレーション
+  department Department @relation(fields: [departmentId], references: [id], onDelete: Restrict)
+  role       Role?       @relation(fields: [roleId], references: [id], onDelete: Restrict)
+  // ↓追加
+  departmentRole    DepartmentRole? @relation(fields: [departmentRoleId], references: [id], onDelete: Restrict)
+
+
+  // Session への逆側（双方向）リレーション
+  sessions Session[] @relation("UserSessions")
+
+  /// 逆リレーション: このユーザーが出したメール変更申請
+  emailChangeRequests    EmailChangeRequest[]
+  // 追加: このユーザーに紐づくパスワード再発行依頼（同定できた場合）
+  passwordRequests       PasswordRequest[]
+
+  // 部署内メール一意（ログインキー）
+  @@unique([departmentId, email])
+  @@index([departmentId])
+  @@index([roleId])
+  // ↓追加
+  @@index([departmentRoleId])
+  @@index([isActive])
+  @@index([createdAt])
+}
+
+// Session 定義
+model Session {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation("UserSessions", fields: [userId], references: [id], onDelete: Cascade)
+
+  expiresAt DateTime @db.Timestamptz
+  createdAt DateTime @default(now()) @db.Timestamptz
+  revokedAt DateTime?                @db.Timestamptz
+
+  ip        String?
+  userAgent String?
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@index([revokedAt])
+}
+
+// ==============================
+// Menu
+// ==============================
+model Menu {
+  id        String    @id @default(uuid())
+  displayId String    @unique @default(dbgenerated("generate_display_id('menu_display_id_seq','MN')")) @db.VarChar(10)
+  isActive  Boolean   @default(true)
+  createdAt DateTime  @default(now()) @db.Timestamptz
+  updatedAt DateTime  @updatedAt      @db.Timestamptz
+  deletedAt DateTime?                  @db.Timestamptz
+
+  parentId    String?
+  title       String
+  href        String?
+  isExternal  Boolean? // 外部URLか
+  iconName    String?
+  match       MenuMatchMode
+  pattern     String?
+  minPriority Int? // 親から継承（アプリ層で強制する）
+  isSection   Boolean
+  sortOrder   Int
+  remarks     String?
+  hidden      Boolean  @default(false)
+  lockHiddenOverride Boolean @default(false)
+
+
+  // リレーション（自己参照）
+  parent   Menu?  @relation("MenuToMenu", fields: [parentId], references: [id], onDelete: Restrict)
+  children Menu[] @relation("MenuToMenu")
+  /// 逆リレーション: 部署ごとのメニュー上書き
+  departmentMenus DepartmentMenu[]
+
+  @@index([parentId])
+  @@index([minPriority])
+  @@index([isActive])
+  @@index([sortOrder])
+  @@index([createdAt])
+  @@index([hidden])
+}
+
+// ==============================
+// DepartmentMenu（部署ごとの上書き）
+// - Menu は全社テンプレ。部署側の可視/hidden/並び順のみ上書きする
+// - 親子関係や href/minPriority はテンプレ側を使用
+// ==============================
+model DepartmentMenu {
+  id           String   @id @default(uuid())
+  createdAt    DateTime @default(now()) @db.Timestamptz
+  updatedAt    DateTime @updatedAt @db.Timestamptz
+
+  departmentId String
+  menuId       String
+
+  /// 有効/無効の上書き（null はテンプレ既定=有効を採用）
+  isEnabled        Boolean?
+  /// hidden の上書き（null はテンプレの hidden を採用）
+  hiddenOverride   Boolean?
+  /// 兄弟内の並び順（null はテンプレの sortOrder を採用）
+  sortOrder        Int?
+  remarks          String?
+
+  // リレーション
+  department Department @relation(fields: [departmentId], references: [id], onDelete: Restrict)
+  menu       Menu       @relation(fields: [menuId], references: [id], onDelete: Restrict)
+
+  // 制約・索引
+  @@unique([departmentId, menuId])
+  @@index([departmentId])
+  @@index([menuId])
+  @@index([isEnabled])
+}
+
+model EmailChangeRequest {
+  id            String             @id @default(uuid())
+  userId        String
+  departmentId  String
+  oldEmailPuny  String             // 申請時点の旧メール（punycodeで保存）
+  newEmailPuny  String             // 変更後メール（punycodeで保存）
+  token         String             @unique
+  status        EmailChangeStatus  @default(PENDING)
+
+  // 有効期限と監査情報
+  expiresAt     DateTime           @db.Timestamptz
+  createdAt     DateTime           @default(now()) @db.Timestamptz
+  processedAt   DateTime?          @db.Timestamptz
+  processedBy   String?
+
+  // 親が削除されてもログ保全を優先（Restrict）
+  user       User       @relation(fields: [userId], references: [id], onDelete: Restrict)
+  department Department @relation(fields: [departmentId], references: [id], onDelete: Restrict)
+
+  @@index([userId])
+  @@index([departmentId])
+  @@index([status])
+  @@index([expiresAt])
+}
+
+model AllowedEmailDomain {
+  id            String    @id @default(uuid())
+  departmentId  String
+  domainAscii   String    // punycode（ASCII）で保存
+  isActive      Boolean   @default(true)
+
+  createdAt     DateTime  @default(now()) @db.Timestamptz
+  updatedAt     DateTime  @updatedAt @db.Timestamptz
+
+  // 親が削除されてもドメイン定義は残す（Restrict）
+  department Department @relation(fields: [departmentId], references: [id], onDelete: Restrict)
+
+  // 同一部署内の重複を禁止
+  @@unique([departmentId, domainAscii])
+
+  @@index([departmentId])
+  @@index([isActive])
+}
+
+model DepartmentRole {
+  id        String   @id @default(uuid())
+  displayId String   @unique @default(dbgenerated("generate_display_id('department_role_display_id_seq','DR')")) @db.VarChar(10)
+  createdAt DateTime @default(now()) @db.Timestamptz
+  updatedAt DateTime @updatedAt @db.Timestamptz
+
+  departmentId String
+  department   Department @relation(fields: [departmentId], references: [id], onDelete: Restrict)
+
+  // override モード
+  roleId              String? 
+  role                Role?   @relation(fields: [roleId], references: [id], onDelete: Restrict)
+  nameOverride        String?
+  badgeColorOverride  String?
+  isEnabled           Boolean @default(true)
+
+  // custom モード
+  code            String?   @db.VarChar(50)
+  name            String?
+  priority        Int?
+  badgeColor      String?
+  canDownloadData Boolean?
+  canEditData     Boolean?
+  isSystem        Boolean?
+  remarks         String?
+
+  users User[]
+
+  @@unique([departmentId, roleId])
+  @@unique([departmentId, code])
+  @@index([departmentId])
+  @@index([roleId])
+}
+
+// ==============================
+// PasswordRequest（新規）
+// - 公開フォームからの“再発行依頼”を保持
+// - 入力生値（部署コード）を保持しつつ、解決できれば departmentId / userId を持つ
+// ==============================
+model PasswordRequest {
+  id        String   @id @default(uuid())
+
+  // 依頼入力
+  departmentCodeInput String           // フォーム入力の部署コード（生値）
+  emailPuny           String           // 依頼メール（punycode ASCII）
+  note                String?
+  ip                  String?          // 任意: 監査
+  userAgent           String?          // 任意: 監査
+
+  // 解決結果（NULL許容：存在秘匿のため、特定できないケースを許容）
+  departmentId String?
+  userId       String?
+
+  // 状態管理
+  status      PasswordRequestStatus @default(PENDING)
+  processedAt DateTime?             @db.Timestamptz
+  processedBy String?               // 承認者/却下者の表示名
+
+  // 監査
+  createdAt   DateTime @default(now()) @db.Timestamptz
+  updatedAt   DateTime @updatedAt      @db.Timestamptz
+
+  // リレーション
+  department  Department? @relation(fields: [departmentId], references: [id], onDelete: Restrict)
+  user        User?       @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  // 索引
+  @@index([departmentId, emailPuny])
+  @@index([departmentCodeInput])
+  @@index([status])
+  @@index([createdAt])
+}

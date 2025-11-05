@@ -3,38 +3,85 @@
 
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import RoleForm from "@/components/roles/role-form";
-import type { RoleUpdateValues } from "@/lib/roles/schema";
+
+import DepartmentRoleForm from "@/components/department-roles/department-role-form";
+import type { DepartmentRoleUpdateValues } from "@/lib/department-roles/schema";
+import {
+  updateDepartmentRole,
+  deleteDepartmentRole,
+} from "@/app/_actions/department-roles/update";
 
 type Props = {
-  initialValues: RoleUpdateValues;
+  initialValues: DepartmentRoleUpdateValues;
+  canEditData?: boolean;
 };
 
-export default function RoleEditClient({ initialValues }: Props) {
+export default function EditDepartmentRoleClient({
+  initialValues,
+  canEditData = false,
+}: Props) {
   const router = useRouter();
 
+  const handleSubmit = async (values: DepartmentRoleUpdateValues) => {
+    if (!canEditData) return; // 念のための保険（編集権がないと通常はボタン非表示）
+    // override の空入力は「ベース値を使う」＝ undefined に正規化
+    const normalized: DepartmentRoleUpdateValues =
+      values.kind === "override"
+        ? {
+            ...values,
+            nameOverride:
+              values.nameOverride && values.nameOverride.trim() !== ""
+                ? values.nameOverride
+                : undefined,
+            badgeColorOverride:
+              values.badgeColorOverride &&
+              values.badgeColorOverride.trim() !== ""
+                ? values.badgeColorOverride
+                : undefined,
+          }
+        : values;
+
+    const res = await updateDepartmentRole(normalized);
+
+    if (res.ok) {
+      toast.success("ロールを更新しました", { duration: 3000 });
+      router.push("/masters/roles");
+      router.refresh();
+      return;
+    }
+    toast.error(res.message ?? "更新に失敗しました。", { duration: 3500 });
+  };
+
+  const handleDelete =
+    canEditData && (initialValues.kind === "custom" || initialValues.displayId)
+      ? async () => {
+          const id =
+            initialValues.kind === "custom"
+              ? initialValues.displayId
+              : (initialValues.displayId as string);
+          const res = await deleteDepartmentRole(id);
+          if (res.ok) {
+            toast.success(
+              initialValues.kind === "custom"
+                ? "ロールを削除しました"
+                : "上書きを削除しました（ベースに戻ります）",
+            );
+            router.push("/masters/roles");
+            router.refresh();
+          } else {
+            toast.error(res.message ?? "削除に失敗しました。");
+          }
+        }
+      : undefined;
+
   return (
-    <RoleForm
+    <DepartmentRoleForm
       mode="edit"
       initialValues={initialValues}
-      onSubmit={(values: RoleUpdateValues) => {
-        // UIのみ：成功扱い（実データは変更しない）
-        toast.success("ロールを更新しました", {
-          description: `ID: ${values.displayId} / ${values.code} / 優先度: ${values.priority} / 有効: ${values.isActive ? "ON" : "OFF"} / DL: ${values.canDownloadData ? "✔" : "✘"} / 編集: ${values.canEditData ? "✔" : "✘"}`,
-          duration: 3500,
-        });
-        // 一覧へ戻す（設計上の戻り先を統一）
-        router.push("/masters/roles");
-      }}
+      onSubmit={canEditData ? handleSubmit : () => {}}
       onCancel={() => history.back()}
-      onDelete={() => {
-        // UIのみ：成功扱い（実データは変更しない）
-        toast.success("ロールを論理削除しました", {
-          description: `ID: ${initialValues.displayId}`,
-          duration: 3000,
-        });
-        router.push("/masters/roles");
-      }}
+      onDelete={canEditData ? handleDelete : undefined}
+      readOnly={!canEditData}
     />
   );
 }

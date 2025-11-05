@@ -2,9 +2,8 @@
 "use client";
 
 import * as React from "react";
-import { useForm } from "react-hook-form";
+import { useForm, useFormContext, useWatch } from "react-hook-form"; // useWatch を追加
 import { zodResolver } from "@hookform/resolvers/zod";
-
 import {
   Form,
   FormField,
@@ -40,7 +39,6 @@ import {
 import { Eye, EyeOff } from "lucide-react";
 
 import {
-  type RoleCode,
   userCreateSchema,
   userUpdateSchema,
   type UserCreateValues,
@@ -49,28 +47,33 @@ import {
   PASSWORD_MIN,
 } from "@/lib/users/schema";
 
+import { generatePassword } from "@/lib/security/password";
+import type { AssignableRoleOption } from "@/app/_actions/department-roles/get-assignable-roles";
+
 /* =========================
    公開インターフェース（型）
    ========================= */
 
-export type RoleOption = { value: RoleCode; label: string };
-
 type BaseProps = {
-  roleOptions: RoleOption[];
+  roleOptions: AssignableRoleOption[];
   onCancel?: () => void;
   onDelete?: () => void;
 };
 
 type CreateProps = BaseProps & {
   mode: "create";
-  onSubmit: (values: UserCreateValues) => void;
+  // ★ 追加：XOR 引き渡し用
+  onSubmitWithRole?: (
+    values: UserCreateValues,
+    selectedRole: string | null,
+    selectedRoleLabel: string | null,
+  ) => void;
   initialValues?: never;
 };
 
 type EditProps = BaseProps & {
   mode: "edit";
   onSubmit: (values: UserUpdateValues) => void;
-  // 読み取り専用 displayId を含む完全な初期値を推奨
   initialValues: UserUpdateValues;
 };
 
@@ -92,14 +95,36 @@ export default function UserForm(props: Props) {
    Create（新規）フォーム
    ========================= */
 
-function CreateForm({ roleOptions, onSubmit, onCancel }: CreateProps) {
+function CreateForm({ roleOptions, onSubmitWithRole, onCancel }: CreateProps) {
   const form = useForm<UserCreateValues>({
     resolver: zodResolver(userCreateSchema),
-    defaultValues: { name: "", email: "", password: "", isActive: true },
+    defaultValues: {
+      name: "",
+      email: "",
+      password: "",
+      isActive: true,
+      phone: "",
+      remarks: "",
+      roleCode: "", // ★ XOR 文字列を直接持つ
+    },
     mode: "onBlur",
   });
 
-  const handleSubmit = form.handleSubmit(onSubmit);
+  // ★ 追加：選択中のロール（"role:<id>" | "dr:<id>"）
+  const roleCode = useWatch({ control: form.control, name: "roleCode" });
+  const selectedLabel =
+    roleOptions.find((o) => o.value === roleCode)?.label ?? null;
+
+  const handleSubmit = form.handleSubmit((values) => {
+    if (onSubmitWithRole) {
+      // トースト用にラベルだけ補助で渡す（生の値は values.roleCode に入っている）
+      onSubmitWithRole(values, values.roleCode || null, selectedLabel);
+    } else {
+      // onSubmit を使う構成ならここで values をそのまま渡す
+      // onSubmit?.(values);
+      console.warn("onSubmitWithRole が未指定です");
+    }
+  });
 
   return (
     <Form {...form}>
@@ -108,9 +133,11 @@ function CreateForm({ roleOptions, onSubmit, onCancel }: CreateProps) {
           <CardContent className="space-y-6 pt-1">
             <NameField />
             <EmailField />
-            <RoleField roleOptions={roleOptions} />
+            <RoleFieldXor roleOptions={roleOptions} />
             <PasswordField />
             <IsActiveField />
+            <PhoneField /> {/* 追加 */}
+            <RemarksField /> {/* 追加 */}
           </CardContent>
 
           <CardFooter className="mt-4 flex gap-2">
@@ -166,8 +193,11 @@ function EditForm({
             <Separator />
             <NameField />
             <EmailField />
-            <RoleField roleOptions={roleOptions} />
+            {/* ★ ここを XOR セレクトに統一 */}
+            <RoleFieldXor roleOptions={roleOptions} />
             <IsActiveField />
+            <PhoneField /> {/* 追加 */}
+            <RemarksField /> {/* 追加 */}
           </CardContent>
 
           <CardFooter className="mt-4 flex items-center justify-between">
@@ -293,54 +323,10 @@ function EmailField() {
   );
 }
 
-// ロール
-function RoleField({ roleOptions }: { roleOptions: RoleOption[] }) {
-  return (
-    <FormField
-      name="roleCode"
-      render={({ field }) => (
-        <FormItem>
-          <FormLabel className="font-semibold">ロール&nbsp;*</FormLabel>
-          <Select
-            name={field.name}
-            value={field.value ?? ""}
-            onValueChange={(v) => field.onChange(v as RoleCode)}
-          >
-            <FormControl>
-              <SelectTrigger
-                aria-label="ロールを選択"
-                data-testid="role-trigger"
-              >
-                <SelectValue
-                  placeholder="選択してください"
-                  data-testid="role-value"
-                />
-              </SelectTrigger>
-            </FormControl>
-            {/* Portal配下でも拾えるようにリスト自体に testid を付与 */}
-            <SelectContent data-testid="role-list">
-              {roleOptions.map((opt) => (
-                <SelectItem
-                  key={opt.value}
-                  value={opt.value}
-                  data-testid={`role-item-${opt.value.toLowerCase()}`}
-                >
-                  {opt.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <FormMessage data-testid="roleCode-error" />
-        </FormItem>
-      )}
-    />
-  );
-}
-
 // パスワード（新規のみ・表示/非表示トグル付き）
 function PasswordField() {
   const [showPassword, setShowPassword] = React.useState(false);
-
+  const form = useFormContext(); // RHFのcontextから setValue/getValues を取得
   return (
     <FormField
       name="password"
@@ -377,6 +363,23 @@ function PasswordField() {
               ) : (
                 <Eye className="size-4" />
               )}
+            </Button>
+
+            {/* 追加：生成ボタン */}
+            <Button
+              type="button"
+              variant="secondary"
+              className="cursor-pointer"
+              onClick={() => {
+                const pw = generatePassword(20);
+                form.setValue("password", pw, {
+                  shouldValidate: true,
+                  shouldDirty: true,
+                });
+              }}
+              data-testid="password-generate"
+            >
+              自動生成
             </Button>
           </div>
           <FormMessage data-testid="password-error" />
@@ -436,6 +439,101 @@ function DisplayIdField() {
             DBで自動採番される表示用IDです（編集不可）。
           </FormDescription>
           <FormMessage data-testid="displayId-error" />
+        </FormItem>
+      )}
+    />
+  );
+}
+
+// 電話番号
+function PhoneField() {
+  return (
+    <FormField
+      name="phone"
+      render={({ field }) => (
+        <FormItem>
+          <FormLabel className="font-semibold">電話番号</FormLabel>
+          <FormControl>
+            <Input
+              {...field}
+              value={field.value ?? ""}
+              placeholder="090-xxxx-xxxx"
+              aria-label="電話番号"
+              autoComplete="off"
+              data-testid="phone"
+            />
+          </FormControl>
+          <FormMessage data-testid="phone-error" />
+        </FormItem>
+      )}
+    />
+  );
+}
+
+// 備考
+function RemarksField() {
+  return (
+    <FormField
+      name="remarks"
+      render={({ field }) => (
+        <FormItem>
+          <FormLabel className="font-semibold">備考</FormLabel>
+          <FormControl>
+            <Input
+              {...field}
+              value={field.value ?? ""}
+              placeholder="メモなど"
+              aria-label="備考"
+              data-testid="remarks"
+            />
+          </FormControl>
+          <FormMessage data-testid="remarks-error" />
+        </FormItem>
+      )}
+    />
+  );
+}
+
+// XOR 単一セレクト：roleCode に直バインド
+function RoleFieldXor({
+  roleOptions,
+}: {
+  roleOptions: AssignableRoleOption[];
+}) {
+  return (
+    <FormField
+      name="roleCode"
+      render={({ field }) => (
+        <FormItem>
+          <FormLabel className="font-semibold">ロール *</FormLabel>
+          <Select
+            value={field.value ?? ""}
+            onValueChange={(v) => field.onChange(v)}
+          >
+            <FormControl>
+              <SelectTrigger
+                aria-label="ロールを選択"
+                data-testid="role-trigger"
+              >
+                <SelectValue
+                  placeholder="選択してください"
+                  data-testid="role-value"
+                />
+              </SelectTrigger>
+            </FormControl>
+            <SelectContent data-testid="role-list">
+              {roleOptions.map((opt) => (
+                <SelectItem
+                  key={opt.value}
+                  value={opt.value}
+                  disabled={opt.disabled}
+                >
+                  {opt.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <FormMessage data-testid="roleCode-error" />
         </FormItem>
       )}
     />
