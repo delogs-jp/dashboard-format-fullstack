@@ -43,7 +43,7 @@ npm install
 
 ```sql
 -- 例：psql の場合
-CREATE DATABASE delogs_format_demo
+CREATE DATABASE delogs_demo
   WITH ENCODING 'UTF8'
       LC_COLLATE='ja_JP.UTF-8'
       LC_CTYPE='ja_JP.UTF-8'
@@ -57,7 +57,7 @@ CREATE DATABASE delogs_format_demo
 ```env
 # .env ファイルの中身
 # データベース接続情報を自身の環境に合わせて変更してください
-DATABASE_URL="postgresql://USER:PASSWORD@localhost:5432/delogs_format_demo"
+DATABASE_URL="postgresql://USER:PASSWORD@localhost:5432/delogs_demo"
 
 # JWTの署名キー（変更推奨）
 # openssl rand -base64 32

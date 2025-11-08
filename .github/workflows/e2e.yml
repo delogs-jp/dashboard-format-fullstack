@@ -36,8 +36,8 @@ jobs:
 
       # 6) Next.js 本番ビルド
       - name: Next.js Build
-        env:
-          JWT_SECRET: ${{ secrets.JWT_SECRET }}
+        # env:
+        #JWT_SECRET: ${{ secrets.JWT_SECRET }}
         run: npm run build
 
       # 7) Next.js 本番サーバをバックグラウンドで起動
